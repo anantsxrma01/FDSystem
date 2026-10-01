@@ -15,12 +15,12 @@ const getMyShopEarnings = async (req, res) => {
     const filter = { shop_id: shop._id };
 
     if (from_date && to_date) {
-      filter.date = { $gte: new Date(from_date), $lte: new Date(to_date) };
+      filter.createdAt = { $gte: new Date(from_date), $lte: new Date(to_date) };
     }
 
-    const earnings = await ShopEarning.find(filter).sort({ date: -1 });
+    const earnings = await ShopEarning.find(filter).sort({ createdAt: -1 });
 
-    const totalNet = earnings.reduce((sum, e) => sum + e.shop_net_amount, 0);
+    const totalNet = earnings.reduce((sum, e) => sum + e.net_payable, 0);
 
     res.json({
       success: true,

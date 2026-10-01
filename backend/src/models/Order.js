@@ -117,4 +117,3 @@ orderSchema.index({ delivery_partner_id: 1 });
 module.exports = mongoose.model("Order", orderSchema);
 module.exports.ORDER_STATUSES = ORDER_STATUSES;
 module.exports.PAYMENT_STATUSES = PAYMENT_STATUSES;
-module.exports = mongoose.model("Order", orderSchema);

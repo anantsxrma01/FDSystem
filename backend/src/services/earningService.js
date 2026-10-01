@@ -38,11 +38,10 @@ async function createEarningsForDeliveredOrder(order, partnerId) {
     await ShopEarning.create({
       order_id: order._id,
       shop_id: order.shop_id,
-      date: orderDate,
-      sub_total: shopGross,
+      gross_amount: shopGross,
       commission_percent: commissionPercent,
-      platform_commission: order.platform_commission,
-      shop_net_amount: order.shop_net
+      commission_amount: order.platform_commission,
+      net_payable: order.shop_net
     });
     order.shop_earning_created = true;
   }

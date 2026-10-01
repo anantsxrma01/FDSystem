@@ -6,6 +6,7 @@ const Shop = require("../models/Shop");
 const Item = require("../models/Item");
 const Address = require("../models/Address");
 const DeliveryPartner = require("../models/DeliveryPartner");
+const User = require("../models/User");
 const { distanceInKm } = require("../utils/distance");
 const {
   generateOrderNumber,
@@ -72,12 +73,18 @@ const placeOrder = async (req, res) => {
     const userId = req.user.id;
     const { shop_id, address_id, items, payment_mode } = req.body;
 
+    const user = await User.findById(userId).session(session);
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
     if (payment_mode === "COD" && user.cod_blocked) {
-  return res.status(400).json({
-    message:
-      "Cash on Delivery is temporarily disabled on your account due to repeated cancellations. Please use online payment."
-  });
-}
+      return res.status(400).json({
+        message:
+          "Cash on Delivery is temporarily disabled on your account due to repeated cancellations. Please use online payment."
+      });
+    }
 
     if (!shop_id || !address_id || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({
