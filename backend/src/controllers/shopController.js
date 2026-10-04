@@ -181,6 +181,25 @@ const adminUpdateShopStatus = async (req, res) => {
 
     await shop.save();
 
+    // Keep the shop owner's account approval gate in sync with the shop's
+    // status, same as the management-portal approval flow does. Without
+    // this, a shop approved here still shows the owner as "PENDING" and
+    // they stay locked out of their own dashboard (requireApproved gate).
+    if (shop.owner_user_id) {
+      if (status === "APPROVED") {
+        await User.findByIdAndUpdate(shop.owner_user_id, {
+          approvalStatus: "APPROVED",
+          role: "SHOP_OWNER"
+        });
+      } else if (status === "REJECTED") {
+        await User.findByIdAndUpdate(shop.owner_user_id, {
+          approvalStatus: "REJECTED"
+        });
+      }
+      // SUSPENDED intentionally leaves approvalStatus untouched: the owner
+      // was already approved, the shop is just temporarily disabled.
+    }
+
     res.json({ success: true, shop });
   } catch (err) {
     console.error("adminUpdateShopStatus error:", err);

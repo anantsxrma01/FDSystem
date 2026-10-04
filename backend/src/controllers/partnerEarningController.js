@@ -1,56 +1,38 @@
 // backend/src/controllers/partnerEarningController.js
+//
+// Reads from the PartnerEarning collection, which is the single source of
+// truth for delivery-partner earnings (created in deliveryPartnerController's
+// markOrderDelivered via utils/earningHelpers + config/financeConfig). This
+// controller used to recompute earnings itself with a different, unused
+// formula — that has been removed so every part of the app agrees on one
+// number per order.
 
-const Order = require("../models/Order");
 const DeliveryPartner = require("../models/DeliveryPartner");
-
-/**
- * Simple earning rule:
- * - per delivered order: base 20 + 5 * distance_km
- * You can change this logic later.
- */
-function calculatePartnerEarningForOrder(order) {
-  const base = 20;
-  const perKm = 5;
-  const distance = order.distance_km || 0;
-  return base + perKm * distance;
-}
+const PartnerEarning = require("../models/PartnerEarning");
 
 /**
  * GET /api/partner/earnings/me
  * Role: DELIVERY_PARTNER
- * Returns summary + list of delivered orders with earning per order.
+ * Returns summary + list of this partner's recorded earnings.
  */
 const getMyEarnings = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    // Find partner document for this user
     const partner = await DeliveryPartner.findOne({ user_id: userId });
 
     if (!partner) {
       return res.status(404).json({ message: "Delivery partner profile not found" });
     }
 
-    // All delivered orders for this partner
-    const orders = await Order.find({
-      delivery_partner_id: partner._id,
-      order_status: "DELIVERED"
-    }).sort({ createdAt: -1 });
+    const earnings = await PartnerEarning.find({ delivery_partner_id: partner._id })
+      .sort({ createdAt: -1 })
+      .populate("order_id", "order_number createdAt total_amount");
 
-    let totalEarning = 0;
-
-    const ordersWithEarning = orders.map((order) => {
-      const earning = calculatePartnerEarningForOrder(order);
-      totalEarning += earning;
-      return {
-        _id: order._id,
-        order_number: order.order_number,
-        createdAt: order.createdAt,
-        distance_km: order.distance_km,
-        total_amount: order.total_amount,
-        earning
-      };
-    });
+    const totalEarning = earnings.reduce((sum, e) => sum + e.total_earning, 0);
+    const totalUnsettled = earnings
+      .filter((e) => !e.is_settled)
+      .reduce((sum, e) => sum + e.total_earning, 0);
 
     res.json({
       success: true,
@@ -60,10 +42,11 @@ const getMyEarnings = async (req, res) => {
         status: partner.status
       },
       summary: {
-        total_earning: totalEarning,
-        total_delivered_orders: orders.length
+        total_earning: Number(totalEarning.toFixed(2)),
+        total_unsettled: Number(totalUnsettled.toFixed(2)),
+        total_delivered_orders: earnings.length
       },
-      orders: ordersWithEarning
+      earnings
     });
   } catch (err) {
     console.error("getMyEarnings error:", err);
@@ -74,41 +57,47 @@ const getMyEarnings = async (req, res) => {
 /**
  * GET /api/partner/earnings/all
  * Role: OWNER / MANAGER
- * Returns earning summary per partner.
+ * Returns earning summary per partner, aggregated from PartnerEarning.
  */
 const getAllPartnersEarningsSummary = async (req, res) => {
   try {
-    // All delivered orders with a partner
-    const orders = await Order.find({
-      delivery_partner_id: { $ne: null },
-      order_status: "DELIVERED"
-    }).populate("delivery_partner_id", "user_id status");
+    const earnings = await PartnerEarning.find({})
+      .populate({
+        path: "delivery_partner_id",
+        select: "user_id status",
+        populate: { path: "user_id", select: "name phone" }
+      });
 
     const map = new Map();
 
-    for (const order of orders) {
-      const partner = order.delivery_partner_id;
+    for (const e of earnings) {
+      const partner = e.delivery_partner_id;
       if (!partner) continue;
 
       const partnerId = String(partner._id);
-      const earning = calculatePartnerEarningForOrder(order);
 
       if (!map.has(partnerId)) {
         map.set(partnerId, {
           partner_id: partnerId,
-          user_id: partner.user_id,
+          user: partner.user_id,
           status: partner.status,
           total_earning: 0,
+          total_unsettled: 0,
           total_orders: 0
         });
       }
 
       const entry = map.get(partnerId);
-      entry.total_earning += earning;
+      entry.total_earning += e.total_earning;
+      if (!e.is_settled) entry.total_unsettled += e.total_earning;
       entry.total_orders += 1;
     }
 
-    const summary = Array.from(map.values());
+    const summary = Array.from(map.values()).map((entry) => ({
+      ...entry,
+      total_earning: Number(entry.total_earning.toFixed(2)),
+      total_unsettled: Number(entry.total_unsettled.toFixed(2))
+    }));
 
     res.json({
       success: true,

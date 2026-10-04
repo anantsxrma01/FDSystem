@@ -203,6 +203,30 @@ const createPayout = async (req, res) => {
   }
 };
 
+// GET /api/admin/payouts/:id
+const getPayoutDetail = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const payout = await Payout.findById(id);
+
+    if (!payout) {
+      return res.status(404).json({ message: "Payout not found" });
+    }
+
+    // Pull the underlying earning records that were settled into this payout.
+    const earnings =
+      payout.entity_type === "SHOP"
+        ? await ShopEarning.find({ payout_id: payout._id }).populate("shop_id", "name")
+        : await PartnerEarning.find({ payout_id: payout._id }).populate("delivery_partner_id");
+
+    res.json({ success: true, payout, earnings });
+  } catch (err) {
+    console.error("getPayoutDetail error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
 // GET /api/admin/payouts?entity_type=&status=
 const listPayouts = async (req, res) => {
   try {
@@ -249,7 +273,10 @@ const markPayoutPaid = async (req, res) => {
 };
 
 module.exports = {
+  getShopEarnings,
+  getPartnerEarnings,
   createPayout,
   listPayouts,
+  getPayoutDetail,
   markPayoutPaid
 };

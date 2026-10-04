@@ -97,9 +97,24 @@ const updateDeliveryPartnerStatus = async (req, res) => {
 
     await partner.save();
 
-    // अगर ACTIVE कर रहे हैं, और user का role कुछ और है, तो उसको DELIVERY_PARTNER बना सकते हैं
-    if (status === "ACTIVE" && partner.user_id && partner.user_id.role !== "DELIVERY_PARTNER") {
-      await User.findByIdAndUpdate(partner.user_id._id, { role: "DELIVERY_PARTNER" });
+    // Keep the partner's User record (role + approval gate) in sync with
+    // this status change, same as the management-portal approval flow
+    // does. Without this, a partner activated here still shows as
+    // "PENDING" and stays blocked by the requireApproved middleware.
+    if (partner.user_id) {
+      if (status === "ACTIVE") {
+        const userUpdate = { approvalStatus: "APPROVED" };
+        if (partner.user_id.role !== "DELIVERY_PARTNER") {
+          userUpdate.role = "DELIVERY_PARTNER";
+        }
+        await User.findByIdAndUpdate(partner.user_id._id, userUpdate);
+      } else if (status === "BANNED") {
+        await User.findByIdAndUpdate(partner.user_id._id, {
+          approvalStatus: "REJECTED"
+        });
+      }
+      // INACTIVE / PENDING are operational states, not approval decisions,
+      // so approvalStatus is left untouched for those.
     }
 
     res.json({
